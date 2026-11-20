@@ -1,0 +1,229 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'auth_service.dart';
+import 'home_service.dart';
+import 'register.dart';
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  LoginPageState createState() => LoginPageState();
+}
+
+class LoginPageState extends State<LoginPage> {
+  final AuthService auth = AuthService();
+  final TextEditingController emailCtrl = TextEditingController();
+  final TextEditingController passwordCtrl = TextEditingController();
+  bool loading = false;
+  bool obscurePassword = true;
+
+  Future<void> forgotPassword() async {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("Forgot Password?"),
+        content: TextField(
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(
+            labelText: "Email",
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: Text("Cancel"),
+            onPressed: () {
+              Navigator.pop(context);
+            },
+          ),
+          ElevatedButton(
+            child: Text("Send Reset Link"),
+            onPressed: () async {
+              if (emailCtrl.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Please enter your email address.")),
+                );
+                return;
+              }
+
+              try {
+                await auth.resetPassword(emailCtrl.text.trim());
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      "Password reset email sent. Check your inbox.",
+                    ),
+                  ),
+                );
+              } catch (e) {
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(
+                    content: Text("Failed to send password reset email."),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    emailCtrl.dispose();
+    passwordCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Login")),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: emailCtrl,
+                decoration: InputDecoration(
+                  labelText: "Email",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 12),
+              TextField(
+                controller: passwordCtrl,
+                obscureText: obscurePassword,
+                decoration: InputDecoration(
+                  labelText: "Password",
+                  border: OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        obscurePassword = !obscurePassword;
+                      });
+                    },
+                  ),
+                ),
+              ),
+
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: forgotPassword,
+                  child: Text("Forgot Password?"),
+                ),
+              ),
+
+              SizedBox(height: 12),
+              ElevatedButton(
+                child: loading
+                    ? CircularProgressIndicator(color: Colors.white)
+                    : Text("Login with Email"),
+                onPressed: () async {
+                  setState(() => loading = true);
+                  final user = await auth.signInWithEmail(
+                    emailCtrl.text,
+                    passwordCtrl.text,
+                  );
+                  if (!context.mounted) return;
+                  setState(() => loading = false);
+
+                  if (user != null) {
+                    if (!user.emailVerified) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            "Please verify your email before logging in.",
+                          ),
+                        ),
+                      );
+                    } else {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => HomePage()),
+                      );
+                    }
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Invalid email or password")),
+                    );
+                  }
+                },
+              ),
+              SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('OR'),
+                  ),
+                  Expanded(child: Divider()),
+                ],
+              ),
+              SizedBox(height: 24),
+              ElevatedButton.icon(
+                icon: Icon(Icons.login),
+                label: Text("Sign in with Google"),
+                onPressed: loading
+                    ? null
+                    : () async {
+                        setState(() => loading = true);
+                        try {
+                          final user = await auth.signInWithGoogle();
+                          if (!context.mounted) return;
+                          if (user != null) {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(builder: (_) => HomePage()),
+                            );
+                          }
+                        } catch (error) {
+                          if (!context.mounted) return;
+                          final message =
+                              error is PlatformException &&
+                                  error.message?.contains('ApiException: 10') ==
+                                      true
+                              ? 'Google Sign-In is not configured for this app. Verify its Android package name and SHA-1 in Firebase.'
+                              : error is FirebaseAuthException
+                              ? 'Google Sign-In failed: ${error.message ?? error.code}'
+                              : 'Google Sign-In failed: $error';
+                          ScaffoldMessenger.of(context)
+                              .showSnackBar(SnackBar(content: Text(message)));
+                        } finally {
+                          if (mounted) setState(() => loading = false);
+                        }
+                      },
+              ),
+              SizedBox(height: 12),
+              TextButton(
+                child: Text("Don't have an account? Register"),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => RegisterPage()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
